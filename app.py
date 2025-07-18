@@ -60,7 +60,7 @@ def get_steam_game_data(steam_url):
             "title": title,
             "short_desc": short_desc,
             "tags": tags[:10],
-            "full_desc": full_desc[:2000] # 可以适当加长描述
+            "full_desc": full_desc[:2000]
         }
     except Exception as e:
         print(f"!!! [Error] 抓取 Steam 数据失败: {e}")
@@ -176,7 +176,7 @@ def feishu_event_handler():
         print(">>> [Log] 正在处理 URL 验证...")
         return jsonify({"challenge": data["challenge"]})
 
-    # 2. 处理事件回调
+    # 2. 检查核心事件数据
     event = data.get("event")
     if not event:
         print(">>> [Log] 请求中无 event 字段，忽略。")
@@ -187,39 +187,46 @@ def feishu_event_handler():
         print(">>> [Log] event 中无 message 字段，忽略。")
         return jsonify({"status": "ignored"})
     
-    # 3. 判断是否为群聊中的@消息
+    # 3. 判断是否为我们关心的消息类型
     chat_type = message.get("chat_type")
-    if chat_type != "group":
-        print(f">>> [Log] 非群聊消息 ({chat_type})，忽略。")
-        return jsonify({"status": "ignored"})
-        
-    # 4. 尝试从消息中提取文本和Steam链接
-    try:
-        content = json.loads(message.get("content", "{}"))
-        text_content = content.get("text", "")
-        match = re.search(r'(https://store\.steampowered\.com/app/\d+)', text_content)
-        
-        if match:
-            steam_url = match.group(1)
-            message_id = message.get("message_id")
-            print(f">>> [Log] 成功匹配到 Steam 链接: {steam_url}")
-            
-            # 启动后台线程进行耗时操作，避免飞书超时
-            thread = threading.Thread(target=process_game_analysis, args=(steam_url, message_id))
-            thread.start()
-            
-            print(">>> [Log] 已启动后台线程进行分析，立即返回。")
-            return jsonify({"status": "processing"})
-        else:
-            print(">>> [Log] 消息中未匹配到 Steam 链接，忽略。")
-    
-    except Exception as e:
-        print(f"!!! [Error] 处理消息时发生严重错误: {e}")
+    mentions = message.get("mentions", [])
 
-    # 5. 对于所有不满足条件的情况，都返回成功，避免飞书重试
+    # 核心逻辑：如果是群聊且被@，或者是私聊，都进行处理
+    is_group_at_message = (chat_type == "group" and len(mentions) > 0)
+    is_p2p_message = (chat_type == "p2p")
+
+    if is_group_at_message or is_p2p_message:
+        log_prefix = "群聊@" if is_group_at_message else "私聊"
+        print(f">>> [Log] 收到{log_prefix}消息，准备处理...")
+        
+        # 4. 尝试从消息中提取文本和Steam链接
+        try:
+            content = json.loads(message.get("content", "{}"))
+            text_content = content.get("text", "")
+            match = re.search(r'(https://store\.steampowered\.com/app/\d+)', text_content)
+            
+            if match:
+                steam_url = match.group(1)
+                message_id = message.get("message_id")
+                print(f">>> [Log] 成功匹配到 Steam 链接: {steam_url}")
+                
+                # 启动后台线程进行耗时操作，避免飞书超时
+                thread = threading.Thread(target=process_game_analysis, args=(steam_url, message_id))
+                thread.start()
+                
+                print(">>> [Log] 已启动后台线程进行分析，立即返回。")
+                return jsonify({"status": "processing"})
+            else:
+                print(">>> [Log] 消息中未匹配到 Steam 链接，忽略。")
+        
+        except Exception as e:
+            print(f"!!! [Error] 处理消息时发生严重错误: {e}")
+    else:
+        print(f">>> [Log] 非群聊@或私聊消息，忽略。")
+
+    # 5. 对于所有不满足条件的情况，都返回成功
     return jsonify({"status": "ok"})
 
 # Serverless 平台会自动处理启动，所以这里的 if __name__ ... 不会执行，但保留它是个好习惯
 if __name__ == "__main__":
-    # 仅用于本地测试，端口可以随意设置
     app.run(host="0.0.0.0", port=8080, debug=True)
