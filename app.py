@@ -1,3 +1,4 @@
+# V5 - 最终侦察版 app.py (完整代码)
 import os
 import re
 import json
@@ -7,18 +8,13 @@ from flask import Flask, request, jsonify
 from bs4 import BeautifulSoup
 
 # --- 配置信息 ---
-# 这些值将从部署平台的环境变量中读取
 FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")
 FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
-# --- Flask App 初始化 ---
 app = Flask(__name__)
 
-# --- 工具函数 ---
-
 def get_feishu_tenant_access_token():
-    """获取飞书 tenant_access_token"""
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     headers = {"Content-Type": "application/json; charset=utf-8"}
     payload = {"app_id": FEISHU_APP_ID, "app_secret": FEISHU_APP_SECRET}
@@ -37,7 +33,6 @@ def get_feishu_tenant_access_token():
         return None
 
 def get_steam_game_data(steam_url):
-    """从 Steam 链接抓取游戏数据"""
     try:
         print(f">>> [Log] 开始抓取 Steam 页面: {steam_url}")
         headers = {
@@ -67,7 +62,7 @@ def get_steam_game_data(steam_url):
         return None
 
 def call_deepseek_ai(game_data):
-    """调用 DeepSeek AI 进行分析"""
+    # ... (这个函数内容不变，为了简洁省略)
     print(">>> [Log] 正在调用 DeepSeek AI...")
     prompt = f"""
     你是一位资深的游戏评测家。请根据以下 Steam 游戏信息，进行全面分析并打分。
@@ -124,8 +119,9 @@ def call_deepseek_ai(game_data):
         print(f"!!! [Error] 调用 DeepSeek API 失败: {e}")
         return "抱歉，AI 分析服务暂时出了一点小问题..."
 
+
 def reply_feishu_message(message_id, content, title="🎮 Steam 游戏分析报告"):
-    """回复消息卡片到飞书"""
+    # ... (这个函数内容不变，为了简洁省略)
     print(">>> [Log] 准备回复飞书消息...")
     token = get_feishu_tenant_access_token()
     if not token: 
@@ -154,7 +150,7 @@ def reply_feishu_message(message_id, content, title="🎮 Steam 游戏分析报�
         print(f"!!! [Error] 发送飞书消息失败: {e}")
 
 def process_game_analysis(steam_url, message_id):
-    """实际处理游戏分析的后台线程任务"""
+    # ... (这个函数内容不变，为了简洁省略)
     print("--- [Log] 后台线程开始执行分析 ---")
     game_data = get_steam_game_data(steam_url)
     if not game_data:
@@ -165,11 +161,15 @@ def process_game_analysis(steam_url, message_id):
     reply_feishu_message(message_id, final_content, f"🎮 {game_data['title']} 分析报告")
     print("--- [Log] 后台线程执行完毕 ---")
 
+
 @app.route("/feishu/event", methods=["POST"])
 def feishu_event_handler():
     """接收飞书事件的主入口"""
     data = request.json
     print(f"\n---------- [Log] 收到新请求: {data.get('header', {}).get('event_type')} ----------")
+    # 为了侦察，我们把完整的 event 数据也打印出来
+    if data.get('event'):
+        print(f">>> [Debug] 完整的 Event 内容: {json.dumps(data.get('event'))}")
 
     # 1. 处理 URL 验证请求
     if "challenge" in data:
@@ -191,7 +191,6 @@ def feishu_event_handler():
     chat_type = message.get("chat_type")
     mentions = message.get("mentions", [])
 
-    # 核心逻辑：如果是群聊且被@，或者是私聊，都进行处理
     is_group_at_message = (chat_type == "group" and len(mentions) > 0)
     is_p2p_message = (chat_type == "p2p")
 
@@ -210,8 +209,7 @@ def feishu_event_handler():
                 message_id = message.get("message_id")
                 print(f">>> [Log] 成功匹配到 Steam 链接: {steam_url}")
                 
-                # 启动后台线程进行耗时操作，避免飞书超时
-                thread = threading.Thread(target=process_game_analysis, args=(steam_url, message_id))
+                thread = threading.Thread(target=process_game_analysis, args=(stream_url, message_id))
                 thread.start()
                 
                 print(">>> [Log] 已启动后台线程进行分析，立即返回。")
@@ -222,11 +220,11 @@ def feishu_event_handler():
         except Exception as e:
             print(f"!!! [Error] 处理消息时发生严重错误: {e}")
     else:
-        print(f">>> [Log] 非群聊@或私聊消息，忽略。")
+        # 这是我们升级的日志打印！
+        print(f">>> [Log] 消息不满足条件，忽略。收到的 chat_type: '{chat_type}', mentions 数量: {len(mentions)}")
 
     # 5. 对于所有不满足条件的情况，都返回成功
     return jsonify({"status": "ok"})
 
-# Serverless 平台会自动处理启动，所以这里的 if __name__ ... 不会执行，但保留它是个好习惯
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=True)
